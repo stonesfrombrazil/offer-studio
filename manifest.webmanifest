@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "Polita Offer Studio",
+  "short_name": "Polita Studio",
+  "description": "Ofertas comerciais e campanhas assistidas por WhatsApp",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#121817",
+  "theme_color": "#121817",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
