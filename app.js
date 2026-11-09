@@ -1,9 +1,567 @@
-(()=>{'use strict';const $=id=>document.getElementById(id), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let db,user,tab='dashboard',contacts=[],offers=[],campaigns=[],recipients=[];const cfg=window.POLITA_CONFIG||{};const notice=m=>$('notice').textContent=m;const btn=(txt,action,cls='')=>`<button class="${cls}" data-action="${action}">${txt}</button>`;function renderAuth(){const ok=!!user;$('login').classList.toggle('hide',ok);$('app').classList.toggle('hide',!ok);$('logout').classList.toggle('hide',!ok)}async function load(){if(!user)return;const queries=await Promise.all(['contacts','offers','campaigns','campaign_recipients'].map(t=>db.from(t).select('*')));if(queries.some(q=>q.error)){notice(queries.find(q=>q.error).error.message);return}[contacts,offers,campaigns,recipients]=queries.map(q=>q.data);render()}const format=v=>v==null?'A consultar':`USD ${Number(v).toFixed(2)}/ft²`;function render(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));let html='';if(tab==='dashboard')html=`<h1>Visão geral</h1><div class="grid"><div class="metric">Clientes<b>${contacts.length}</b></div><div class="metric">Ofertas<b>${offers.length}</b></div><div class="metric">Campanhas<b>${campaigns.length}</b></div></div><div class="panel"><h2>Fluxo comercial</h2><p>1. Cadastre compradores com consentimento.</p><p>2. Prepare a oferta e seu link público.</p><p>3. Crie uma campanha e escolha os destinatários.</p><p>4. Abra cada conversa, envie e confirme manualmente.</p></div>`;
-if(tab==='contacts')html=`<h1>Clientes</h1><div class="panel"><h2>Novo comprador</h2><form id="contactForm"><div class="row"><label>Empresa<input name="company" required></label><label>Contato<input name="name" required></label></div><div class="row"><label>WhatsApp (DDI + número)<input name="phone" required placeholder="5215512345678"></label><label>País<input name="country"></label><label>Idioma<select name="language"><option>ES</option><option>EN</option><option>PT</option></select></label></div><label><input class="check" type="checkbox" name="consent" required>Confirmei a autorização para receber ofertas comerciais</label><button>Salvar comprador</button></form></div><div class="panel"><h2>Minha carteira (${contacts.length})</h2>${contacts.map(c=>`<div class="item"><div><b>${esc(c.name)}</b> · ${esc(c.company)}<p class="muted">${esc(c.country)} · ${esc(c.phone)} · ${esc(c.language)}</p></div>${btn('Excluir','delete-contact:'+c.id,'secondary')}</div>`).join('')||'<p class="muted">Nenhum comprador cadastrado.</p>'}</div>`;
-if(tab==='offers')html=`<h1>Ofertas</h1><div class="panel"><h2>Nova oferta</h2><form id="offerForm"><label>Título<input name="title" required placeholder="Crystallo · Seleção novembro"></label><div class="row"><label>Material<input name="material" value="Crystallo Polita" required></label><label>Bloco<input name="block_code" placeholder="1007449"></label><label>Preço USD/ft²<input name="price" type="number" step="0.01" min="0"></label></div><label>Link público do catálogo<input name="offer_url" type="url" placeholder="https://..."></label><label>Observações<textarea name="notes"></textarea></label><button>Salvar oferta</button></form></div><div class="panel"><h2>Minhas ofertas</h2>${offers.map(o=>`<div class="item"><div><b>${esc(o.title)}</b><p class="muted">${esc(o.material)} · ${esc(o.block_code)} · ${format(o.price)}</p>${o.offer_url?`<a href="${esc(o.offer_url)}" target="_blank" rel="noopener noreferrer">Abrir catálogo</a>`:''}</div>${btn('Excluir','delete-offer:'+o.id,'secondary')}</div>`).join('')||'<p class="muted">Nenhuma oferta cadastrada.</p>'}</div>`;
-if(tab==='campaigns')html=`<h1>Campanhas</h1><div class="panel"><h2>Criar campanha</h2><form id="campaignForm"><label>Nome<input name="name" required placeholder="Crystallo · Compradores México"></label><label>Oferta<select name="offer_id" required><option value="">Selecione</option>${offers.map(o=>`<option value="${o.id}">${esc(o.title)}</option>`).join('')}</select></label><h3>Destinatários autorizados</h3>${contacts.filter(c=>c.consent).map(c=>`<label><input class="check" type="checkbox" name="contact" value="${c.id}">${esc(c.name)} · ${esc(c.company)} (${esc(c.language)})</label>`).join('')||'<p class="muted">Cadastre compradores com consentimento.</p>'}<button ${!offers.length?'disabled':''}>Criar campanha</button></form></div><div class="panel"><h2>Campanhas criadas</h2>${campaigns.map(c=>`<div class="item"><div><b>${esc(c.name)}</b><p class="muted">${recipients.filter(r=>r.campaign_id===c.id).length} destinatários</p></div>${btn('Abrir fila','queue:'+c.id,'secondary')}</div>`).join('')||'<p class="muted">Nenhuma campanha cadastrada.</p>'}</div>`;
-if(tab==='queue'){const cid=window.activeCampaign||campaigns[0]?.id;const campaign=campaigns.find(c=>c.id===cid),offer=offers.find(o=>o.id===campaign?.offer_id);html=`<h1>Fila de WhatsApp</h1><label>Campanha<select id="campaignPicker"><option value="">Selecione</option>${campaigns.map(c=>`<option value="${c.id}" ${c.id===cid?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>${campaign?`<div class="panel"><h2>${esc(campaign.name)}</h2><p class="muted">${esc(offer?.title)} · Confirme manualmente após enviar no WhatsApp.</p>${recipients.filter(r=>r.campaign_id===cid).map(r=>{const c=contacts.find(x=>x.id===r.contact_id);return c?`<div class="item"><div><b>${esc(c.name)}</b> <span class="tag">${esc(r.status)}</span><p class="muted">${esc(c.company)} · ${esc(c.phone)}</p></div><div class="row">${btn('Abrir WhatsApp','open:'+r.id)}${btn('Confirmar envio','confirm:'+r.id,'secondary')}${btn('Pular','skip:'+r.id,'secondary')}</div></div>`:''}).join('')}</div>`:'<p class="muted">Crie uma campanha para começar.</p>'}`}$('content').innerHTML=html;}
-function message(c,o){const url=o.offer_url?`\n${o.offer_url}`:'';const price=o.price!=null?`\n${format(o.price)}`:'';if(c.language==='EN')return `Hello ${c.name}! Hope you're doing well.\n\nI'd like to share ${o.material}${o.block_code?' · block '+o.block_code:''} from Polita.${price}${url}\n\nPlease let me know if you'd like more details or an inspection.`;if(c.language==='PT')return `Olá, ${c.name}! Tudo bem?\n\nGostaria de compartilhar ${o.material}${o.block_code?' · bloco '+o.block_code:''}, da Polita.${price}${url}\n\nFico à disposição para fotos, vídeos e inspeção.`;return `¡Hola, ${c.name}! Espero que estés muy bien.\n\nQuisiera compartir ${o.material}${o.block_code?' · bloque '+o.block_code:''}, de Polita.${price}${url}\n\nAvísame si necesitas fotos, videos o coordinar una inspección.`}
-async function mutate(table,method,args){const q=method==='insert'?db.from(table).insert(args):db.from(table).delete().eq('id',args);const {error}=await q;if(error)throw error;await load()}document.addEventListener('submit',async e=>{if(!['contactForm','offerForm','campaignForm'].includes(e.target.id))return;e.preventDefault();const f=e.target,d=new FormData(f);try{if(f.id==='contactForm'){const phone=String(d.get('phone')).replace(/\D/g,'');if(!/^\d{10,15}$/.test(phone))throw Error('Número inválido: use DDI e número, de 10 a 15 dígitos.');await mutate('contacts','insert',{owner_id:user.id,company:d.get('company'),name:d.get('name'),phone,country:d.get('country'),language:d.get('language'),consent:d.has('consent')})}if(f.id==='offerForm')await mutate('offers','insert',{owner_id:user.id,title:d.get('title'),material:d.get('material'),block_code:d.get('block_code'),price:d.get('price')===''?null:Number(d.get('price')),offer_url:d.get('offer_url')||null,notes:d.get('notes')});if(f.id==='campaignForm'){const ids=d.getAll('contact');if(!ids.length)throw Error('Selecione pelo menos um destinatário.');const {data,error}=await db.from('campaigns').insert({owner_id:user.id,name:d.get('name'),offer_id:d.get('offer_id')}).select().single();if(error)throw error;const result=await db.from('campaign_recipients').insert(ids.map(contact_id=>({campaign_id:data.id,contact_id})));if(result.error)throw result.error;window.activeCampaign=data.id;tab='queue';await load()}notice('Registro salvo.')}catch(err){notice(err.message)}});
-document.addEventListener('change',e=>{if(e.target.id==='campaignPicker'){window.activeCampaign=e.target.value;render()}});document.addEventListener('click',async e=>{const t=e.target.closest('[data-tab],[data-action]');if(!t)return;if(t.dataset.tab){tab=t.dataset.tab;render();return}const [action,id]=t.dataset.action.split(':');try{if(action==='queue'){window.activeCampaign=id;tab='queue';render()}if(action==='delete-contact'||action==='delete-offer'){if(!confirm('Excluir este registro?'))return;await mutate(action==='delete-contact'?'contacts':'offers','delete',id)}if(['open','confirm','skip'].includes(action)){const r=recipients.find(x=>x.id===id),c=contacts.find(x=>x.id===r?.contact_id),campaign=campaigns.find(x=>x.id===r?.campaign_id),o=offers.find(x=>x.id===campaign?.offer_id);if(!r||!c||!o)throw Error('Dados da campanha incompletos.');if(action==='open'){if(!c.consent)throw Error('Contato sem consentimento.');const link='https://wa.me/'+c.phone+'?text='+encodeURIComponent(message(c,o));window.open(link,'_blank','noopener,noreferrer');await db.from('campaign_recipients').update({status:'opened',opened_at:new Date().toISOString()}).eq('id',id);await load();notice('Conversa aberta. O envio ainda precisa ser confirmado no WhatsApp.')}else{const status=action==='confirm'?'confirmed':'skipped';await db.from('campaign_recipients').update({status,confirmed_at:status==='confirmed'?new Date().toISOString():null}).eq('id',id);await load();notice(status==='confirmed'?'Envio marcado como confirmado pelo vendedor.':'Destinatário pulado.')}}}catch(err){notice(err.message)}});
-$('signin').onclick=async()=>{if(!db)return;const {data,error}=await db.auth.signInWithPassword({email:$('email').value,password:$('password').value});if(error)return notice(error.message);user=data.user;renderAuth();await load()};$('logout').onclick=async()=>{await db.auth.signOut();user=null;renderAuth()};async function start(){if(!cfg.supabaseUrl||!cfg.supabaseAnonKey||cfg.supabaseUrl.includes('YOUR-'))return notice('Configure config.js com URL e chave pública do Supabase antes de entrar.');db=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey);const {data}=await db.auth.getUser();user=data.user;renderAuth();if(user)await load();db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){user=null;renderAuth()}})}start()})();
+
+(() => {
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[c]));
+
+  let db;
+  let user;
+  let tab = 'dashboard';
+  let contacts = [];
+  let offers = [];
+  let campaigns = [];
+  let recipients = [];
+
+  // Configuração corrigida para config.js
+  const cfg = {
+    supabaseUrl: window.APP_CONFIG?.SUPABASE_URL,
+    supabaseAnonKey: window.APP_CONFIG?.SUPABASE_ANON_KEY
+  };
+
+  const notice = m => {
+    $('notice').textContent = m;
+  };
+
+  const btn = (txt, action, cls = '') =>
+    `<button class="${cls}" data-action="${action}">${txt}</button>`;
+
+  function renderAuth() {
+    const ok = !!user;
+    $('login').classList.toggle('hide', ok);
+    $('app').classList.toggle('hide', !ok);
+    $('logout').classList.toggle('hide', !ok);
+  }
+
+  async function load() {
+    if (!user) return;
+
+    const queries = await Promise.all(
+      ['contacts', 'offers', 'campaigns', 'campaign_recipients']
+        .map(t => db.from(t).select('*'))
+    );
+
+    if (queries.some(q => q.error)) {
+      notice(queries.find(q => q.error).error.message);
+      return;
+    }
+
+    [contacts, offers, campaigns, recipients] =
+      queries.map(q => q.data);
+
+    render();
+  }
+
+  const format = v =>
+    v == null ? 'A consultar' : `USD ${Number(v).toFixed(2)}/ft²`;
+
+  function render() {
+    document.querySelectorAll('[data-tab]').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === tab)
+    );
+
+    let html = '';
+
+    if (tab === 'dashboard') {
+      html = `
+        <h1>Visão geral</h1>
+        <div class="grid">
+          <div class="metric">Clientes<b>${contacts.length}</b></div>
+          <div class="metric">Ofertas<b>${offers.length}</b></div>
+          <div class="metric">Campanhas<b>${campaigns.length}</b></div>
+        </div>
+        <div class="panel">
+          <h2>Fluxo comercial</h2>
+          <p>1. Cadastre compradores com consentimento.</p>
+          <p>2. Prepare a oferta e seu link público.</p>
+          <p>3. Crie uma campanha e escolha os destinatários.</p>
+          <p>4. Abra cada conversa, envie e confirme manualmente.</p>
+        </div>`;
+    }
+
+    if (tab === 'contacts') {
+      html = `
+        <h1>Clientes</h1>
+        <div class="panel">
+          <h2>Novo comprador</h2>
+          <form id="contactForm">
+            <div class="row">
+              <label>Empresa<input name="company" required></label>
+              <label>Contato<input name="name" required></label>
+            </div>
+            <div class="row">
+              <label>WhatsApp (DDI + número)
+                <input name="phone" required placeholder="5215512345678">
+              </label>
+              <label>País<input name="country"></label>
+              <label>Idioma
+                <select name="language">
+                  <option>ES</option>
+                  <option>EN</option>
+                  <option>PT</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              <input class="check" type="checkbox" name="consent" required>
+              Confirmei a autorização para receber ofertas comerciais
+            </label>
+            <button>Salvar comprador</button>
+          </form>
+        </div>
+        <div class="panel">
+          <h2>Minha carteira (${contacts.length})</h2>
+          ${contacts.map(c => `
+            <div class="item">
+              <div>
+                <b>${esc(c.name)}</b> · ${esc(c.company)}
+                <p class="muted">
+                  ${esc(c.country)} · ${esc(c.phone)} · ${esc(c.language)}
+                </p>
+              </div>
+              ${btn('Excluir', 'delete-contact:' + c.id, 'secondary')}
+            </div>`).join('') ||
+            '<p class="muted">Nenhum comprador cadastrado.</p>'}
+        </div>`;
+    }
+
+    if (tab === 'offers') {
+      html = `
+        <h1>Ofertas</h1>
+        <div class="panel">
+          <h2>Nova oferta</h2>
+          <form id="offerForm">
+            <label>Título
+              <input name="title" required placeholder="Seleção novembro">
+            </label>
+            <div class="row">
+              <label>Material
+                <input name="material" required>
+              </label>
+              <label>Bloco
+                <input name="block_code" placeholder="1007449">
+              </label>
+              <label>Preço USD/ft²
+                <input name="price" type="number" step="0.01" min="0">
+              </label>
+            </div>
+            <label>Link público do catálogo
+              <input name="offer_url" type="url" placeholder="https://...">
+            </label>
+            <label>Observações
+              <textarea name="notes"></textarea>
+            </label>
+            <button>Salvar oferta</button>
+          </form>
+        </div>
+        <div class="panel">
+          <h2>Minhas ofertas</h2>
+          ${offers.map(o => `
+            <div class="item">
+              <div>
+                <b>${esc(o.title)}</b>
+                <p class="muted">
+                  ${esc(o.material)} · ${esc(o.block_code)} · ${format(o.price)}
+                </p>
+                ${o.offer_url ? `
+                  <a href="${esc(o.offer_url)}"
+                     target="_blank"
+                     rel="noopener noreferrer">
+                    Abrir catálogo
+                  </a>` : ''}
+              </div>
+              ${btn('Excluir', 'delete-offer:' + o.id, 'secondary')}
+            </div>`).join('') ||
+            '<p class="muted">Nenhuma oferta cadastrada.</p>'}
+        </div>`;
+    }
+
+    if (tab === 'campaigns') {
+      html = `
+        <h1>Campanhas</h1>
+        <div class="panel">
+          <h2>Criar campanha</h2>
+          <form id="campaignForm">
+            <label>Nome
+              <input name="name" required placeholder="Ofertas México">
+            </label>
+            <label>Oferta
+              <select name="offer_id" required>
+                <option value="">Selecione</option>
+                ${offers.map(o => `
+                  <option value="${o.id}">${esc(o.title)}</option>
+                `).join('')}
+              </select>
+            </label>
+            <h3>Destinatários autorizados</h3>
+            ${contacts.filter(c => c.consent).map(c => `
+              <label>
+                <input class="check" type="checkbox"
+                       name="contact" value="${c.id}">
+                ${esc(c.name)} · ${esc(c.company)} (${esc(c.language)})
+              </label>`).join('') ||
+              '<p class="muted">Cadastre compradores com consentimento.</p>'}
+            <button ${!offers.length ? 'disabled' : ''}>
+              Criar campanha
+            </button>
+          </form>
+        </div>
+        <div class="panel">
+          <h2>Campanhas criadas</h2>
+          ${campaigns.map(c => `
+            <div class="item">
+              <div>
+                <b>${esc(c.name)}</b>
+                <p class="muted">
+                  ${recipients.filter(r => r.campaign_id === c.id).length}
+                  destinatários
+                </p>
+              </div>
+              ${btn('Abrir fila', 'queue:' + c.id, 'secondary')}
+            </div>`).join('') ||
+            '<p class="muted">Nenhuma campanha cadastrada.</p>'}
+        </div>`;
+    }
+
+    if (tab === 'queue') {
+      const cid = window.activeCampaign || campaigns[0]?.id;
+      const campaign = campaigns.find(c => c.id === cid);
+      const offer = offers.find(o => o.id === campaign?.offer_id);
+
+      html = `
+        <h1>Fila de WhatsApp</h1>
+        <label>Campanha
+          <select id="campaignPicker">
+            <option value="">Selecione</option>
+            ${campaigns.map(c => `
+              <option value="${c.id}" ${c.id === cid ? 'selected' : ''}>
+                ${esc(c.name)}
+              </option>`).join('')}
+          </select>
+        </label>
+        ${campaign ? `
+          <div class="panel">
+            <h2>${esc(campaign.name)}</h2>
+            <p class="muted">
+              ${esc(offer?.title)} · Confirme manualmente após enviar.
+            </p>
+            ${recipients.filter(r => r.campaign_id === cid).map(r => {
+              const c = contacts.find(x => x.id === r.contact_id);
+              return c ? `
+                <div class="item">
+                  <div>
+                    <b>${esc(c.name)}</b>
+                    <span class="tag">${esc(r.status)}</span>
+                    <p class="muted">${esc(c.company)} · ${esc(c.phone)}</p>
+                  </div>
+                  <div class="row">
+                    ${btn('Abrir WhatsApp', 'open:' + r.id)}
+                    ${btn('Confirmar envio', 'confirm:' + r.id, 'secondary')}
+                    ${btn('Pular', 'skip:' + r.id, 'secondary')}
+                  </div>
+                </div>` : '';
+            }).join('')}
+          </div>` :
+          '<p class="muted">Crie uma campanha para começar.</p>'}`;
+    }
+
+    $('content').innerHTML = html;
+  }
+
+  function message(c, o) {
+    const url = o.offer_url ? `\n${o.offer_url}` : '';
+    const price = o.price != null ? `\n${format(o.price)}` : '';
+
+    if (c.language === 'EN') {
+      return `Hello ${c.name}! Hope you're doing well.
+
+I'd like to share ${o.material}${o.block_code ? ' · block ' + o.block_code : ''}.${price}${url}
+
+Please let me know if you'd like more details or an inspection.`;
+    }
+
+    if (c.language === 'PT') {
+      return `Olá, ${c.name}! Tudo bem?
+
+Gostaria de compartilhar ${o.material}${o.block_code ? ' · bloco ' + o.block_code : ''}.${price}${url}
+
+Fico à disposição para fotos, vídeos e inspeção.`;
+    }
+
+    return `¡Hola, ${c.name}! Espero que estés muy bien.
+
+Quisiera compartir ${o.material}${o.block_code ? ' · bloque ' + o.block_code : ''}.${price}${url}
+
+Avísame si necesitas fotos, videos o coordinar una inspección.`;
+  }
+
+  async function mutate(table, method, args) {
+    const q = method === 'insert'
+      ? db.from(table).insert(args)
+      : db.from(table).delete().eq('id', args);
+
+    const { error } = await q;
+    if (error) throw error;
+    await load();
+  }
+
+  document.addEventListener('submit', async e => {
+    if (!['contactForm', 'offerForm', 'campaignForm'].includes(e.target.id)) {
+      return;
+    }
+
+    e.preventDefault();
+
+    const f = e.target;
+    const d = new FormData(f);
+
+    try {
+      if (f.id === 'contactForm') {
+        const phone = String(d.get('phone')).replace(/\D/g, '');
+
+        if (!/^\d{10,15}$/.test(phone)) {
+          throw Error('Número inválido: use DDI e número, de 10 a 15 dígitos.');
+        }
+
+        await mutate('contacts', 'insert', {
+          owner_id: user.id,
+          company: d.get('company'),
+          name: d.get('name'),
+          phone,
+          country: d.get('country'),
+          language: d.get('language'),
+          consent: d.has('consent')
+        });
+      }
+
+      if (f.id === 'offerForm') {
+        await mutate('offers', 'insert', {
+          owner_id: user.id,
+          title: d.get('title'),
+          material: d.get('material'),
+          block_code: d.get('block_code'),
+          price: d.get('price') === '' ? null : Number(d.get('price')),
+          offer_url: d.get('offer_url') || null,
+          notes: d.get('notes')
+        });
+      }
+
+      if (f.id === 'campaignForm') {
+        const ids = d.getAll('contact');
+
+        if (!ids.length) {
+          throw Error('Selecione pelo menos um destinatário.');
+        }
+
+        const { data, error } = await db.from('campaigns')
+          .insert({
+            owner_id: user.id,
+            name: d.get('name'),
+            offer_id: d.get('offer_id')
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const result = await db.from('campaign_recipients')
+          .insert(ids.map(contact_id => ({
+            campaign_id: data.id,
+            contact_id
+          })));
+
+        if (result.error) throw result.error;
+
+        window.activeCampaign = data.id;
+        tab = 'queue';
+        await load();
+      }
+
+      notice('Registro salvo.');
+    } catch (err) {
+      notice(err.message);
+    }
+  });
+
+  document.addEventListener('change', e => {
+    if (e.target.id === 'campaignPicker') {
+      window.activeCampaign = e.target.value;
+      render();
+    }
+  });
+
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-tab],[data-action]');
+    if (!t) return;
+
+    if (t.dataset.tab) {
+      tab = t.dataset.tab;
+      render();
+      return;
+    }
+
+    const [action, id] = t.dataset.action.split(':');
+
+    try {
+      if (action === 'queue') {
+        window.activeCampaign = id;
+        tab = 'queue';
+        render();
+      }
+
+      if (action === 'delete-contact' || action === 'delete-offer') {
+        if (!confirm('Excluir este registro?')) return;
+
+        await mutate(
+          action === 'delete-contact' ? 'contacts' : 'offers',
+          'delete',
+          id
+        );
+      }
+
+      if (['open', 'confirm', 'skip'].includes(action)) {
+        const r = recipients.find(x => x.id === id);
+        const c = contacts.find(x => x.id === r?.contact_id);
+        const campaign = campaigns.find(x => x.id === r?.campaign_id);
+        const o = offers.find(x => x.id === campaign?.offer_id);
+
+        if (!r || !c || !o) {
+          throw Error('Dados da campanha incompletos.');
+        }
+
+        if (action === 'open') {
+          if (!c.consent) {
+            throw Error('Contato sem consentimento.');
+          }
+
+          const link = 'https://wa.me/' + c.phone +
+            '?text=' + encodeURIComponent(message(c, o));
+
+          window.open(link, '_blank', 'noopener,noreferrer');
+
+          const { error } = await db.from('campaign_recipients')
+            .update({
+              status: 'opened',
+              opened_at: new Date().toISOString()
+            })
+            .eq('id', id);
+
+          if (error) throw error;
+
+          await load();
+          notice('Conversa aberta. Confirme o envio no WhatsApp.');
+        } else {
+          const status = action === 'confirm' ? 'confirmed' : 'skipped';
+
+          const { error } = await db.from('campaign_recipients')
+            .update({
+              status,
+              confirmed_at: status === 'confirmed'
+                ? new Date().toISOString()
+                : null
+            })
+            .eq('id', id);
+
+          if (error) throw error;
+
+          await load();
+
+          notice(status === 'confirmed'
+            ? 'Envio marcado como confirmado.'
+            : 'Destinatário pulado.');
+        }
+      }
+    } catch (err) {
+      notice(err.message);
+    }
+  });
+
+  $('signin').onclick = async () => {
+    if (!db) {
+      notice('Conexão com Supabase não inicializada.');
+      return;
+    }
+
+    const { data, error } = await db.auth.signInWithPassword({
+      email: $('email').value.trim(),
+      password: $('password').value
+    });
+
+    if (error) {
+      notice(error.message);
+      return;
+    }
+
+    user = data.user;
+    notice('');
+    renderAuth();
+    await load();
+  };
+
+  $('logout').onclick = async () => {
+    if (!db) return;
+
+    const { error } = await db.auth.signOut();
+
+    if (error) {
+      notice(error.message);
+      return;
+    }
+
+    user = null;
+    contacts = [];
+    offers = [];
+    campaigns = [];
+    recipients = [];
+    notice('');
+    renderAuth();
+  };
+
+  async function start() {
+    if (!cfg.supabaseUrl || !cfg.supabaseAnonKey) {
+      notice('Configure config.js com URL e chave pública do Supabase.');
+      return;
+    }
+
+    if (!window.supabase?.createClient) {
+      notice('Não foi possível carregar a biblioteca do Supabase.');
+      return;
+    }
+
+    try {
+      db = window.supabase.createClient(
+        cfg.supabaseUrl,
+        cfg.supabaseAnonKey
+      );
+
+      const { data, error } = await db.auth.getUser();
+
+      if (error && error.name !== 'AuthSessionMissingError') {
+        notice(error.message);
+      }
+
+      user = data?.user || null;
+      renderAuth();
+
+      if (user) await load();
+
+      db.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_OUT') {
+          user = null;
+          renderAuth();
+        }
+      });
+    } catch (err) {
+      notice('Erro ao iniciar Supabase: ' + err.message);
+    }
+  }
+
+  start();
+})();
